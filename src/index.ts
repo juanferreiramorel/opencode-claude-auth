@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { execFile } from "node:child_process";
@@ -97,7 +97,7 @@ async function findClaude(): Promise<string | undefined> {
     ];
     for (const p of commonPaths) {
       try {
-        await readFile(p);
+        await access(p);
         return p;
       } catch {}
     }
