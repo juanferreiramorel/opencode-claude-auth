@@ -132,16 +132,28 @@ async function refreshViaCli(claudePath: string): Promise<void> {
 const REFRESH_THRESHOLD_MS = 30 * 60 * 1000;
 
 const plugin: Plugin = async () => {
-  const claudePath = await findClaude();
-  const creds = await readCredentials();
+  // Lazy init — don't spawn processes at startup
+  let claudePath: string | undefined;
+  let cliUserAgent: string | undefined;
+  let initialized = false;
+  let initPromise: Promise<void> | null = null;
 
-  if (!claudePath || !creds?.claudeAiOauth?.accessToken) {
-    return {};
+  async function lazyInit(): Promise<void> {
+    if (initialized) return;
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      try {
+        claudePath = await findClaude();
+        if (claudePath) {
+          const version = await getClaudeVersion(claudePath);
+          cliUserAgent = buildUserAgent(version);
+        }
+      } catch {}
+      initialized = true;
+      initPromise = null;
+    })();
+    return initPromise;
   }
-
-  // Get version dynamically from installed Claude CLI
-  const cliVersion = await getClaudeVersion(claudePath);
-  const cliUserAgent = buildUserAgent(cliVersion);
 
   let cachedToken: string | undefined;
   let cachedExpiresAt: number | undefined;
@@ -204,7 +216,8 @@ const plugin: Plugin = async () => {
 
     "session.created": async (): Promise<void> => {
       try {
-        await ensureSync();
+        await lazyInit();
+        if (claudePath) await ensureSync();
       } catch {}
     },
 
@@ -212,8 +225,11 @@ const plugin: Plugin = async () => {
       try {
         if (input?.model?.providerID !== "anthropic") return;
 
+        await lazyInit();
+        if (!claudePath) return;
+
         // Match official Claude CLI headers
-        output.headers["user-agent"] = cliUserAgent;
+        if (cliUserAgent) output.headers["user-agent"] = cliUserAgent;
         output.headers["x-app"] = CLI_APP_ID;
 
         const now = Date.now();
